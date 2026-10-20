@@ -1,0 +1,53 @@
+name: Instagram scheduled publishing
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+      timezone: Asia/Kolkata
+    - cron: '0 15 * * *'
+      timezone: Asia/Kolkata
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: Which queue to publish now
+        required: true
+        type: choice
+        options:
+          - morning
+          - afternoon
+
+permissions:
+  contents: write
+
+concurrency:
+  group: instagram-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Publish the next queued post
+        env:
+          IG_ACCOUNTS_JSON: ${{ secrets.IG_ACCOUNTS_JSON }}
+          META_GRAPH_VERSION: v25.0
+          SCHEDULE_CRON: ${{ github.event.schedule }}
+          MANUAL_SLOT: ${{ inputs.slot }}
+        run: python social-publisher/publisher.py
+      - name: Save per-account publish progress
+        if: always()
+        run: |
+          if git diff --quiet -- social-publisher/.automation-state.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add social-publisher/.automation-state.json
+          git commit -m "Save Instagram publishing progress"
+          git push
